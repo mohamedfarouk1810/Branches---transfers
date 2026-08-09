@@ -236,31 +236,44 @@ with tab1:
                 conn.close()
                 st.success(f"✅ تم تسجيل التحويلة رقم ({transfer_code}) بنجاح وإرسالها إلى فرع {target_branch}!")
 
-# --- التبويب الثاني: استلام التحويلات الواردة ---
+# --- التبويب الثاني: استلام التحويلات الواردة مع إشعارات لحظية ---
 with tab2:
-    st.subheader(f"التحويلات الواردة إلى فرع [{current_user_branch}] (بانتظار التأكيد)")
+    # جلب التحويلات الواردة للفرع الحالي
+    res = supabase.table("transfers").select("*").eq("target_branch", current_branch).eq("status", "قيد الانتظار").execute()
+    incoming_data = res.data
     
-    conn = sqlite3.connect(DB_FILE)
-    df_incoming = pd.read_sql_query('''
-        SELECT id, from_branch AS 'الفرع المرسل', transfer_date AS 'تاريخ التحويل', 
-               transfer_code AS 'رقم التحويلة', sender_name AS 'القائم بالتحويل', 
-               notes AS 'الملاحظات', status AS 'الحالة'
-        FROM transfers 
-        WHERE target_branch = ? AND status = 'قيد الانتظار'
-    ''', conn, params=(current_user_branch,))
-    conn.close()
-    
-    if df_incoming.empty:
-        st.info("✨ لا توجد تحويلات قيد الانتظار لهذا الفرع حالياً.")
+    # 🔔 آلية الإشعارات:
+    if incoming_data:
+        count = len(incoming_data)
+        # 1. إشعار منبثق سريع في أسفل الشاشة
+        st.toast(f"🔔 لديك {count} تحويلة/تحويلات جديدة بانتظار التأكيد!", icon="📦")
+        
+        # 2. تنبيه بارز ملون أعلى الصفحة
+        st.error(f"🚨 **تنبيه فرع [{current_branch}]:** يوجد عدد ({count}) تحويلة واردة جديدة إليك الآن. يرجى مراجعتها وتأكيد الاستلام بالأسفل.")
     else:
-        st.dataframe(df_incoming.drop(columns=['id']), use_container_width=True)
+        st.success("✨ لا توجد أي تحويلات قيد الانتظار لهذا الفرع حالياً.")
+
+    st.subheader(f"قائمة التحويلات الواردة إلى فرع [{current_branch}]")
+    
+    if incoming_data:
+        df_incoming = pd.DataFrame(incoming_data)
+        display_df = df_incoming[['from_branch', 'transfer_date', 'transfer_code', 'sender_name', 'notes', 'status']].rename(columns={
+            'from_branch': 'الفرع المرسل',
+            'transfer_date': 'تاريخ التحويل',
+            'transfer_code': 'رقم التحويلة',
+            'sender_name': 'القائم بالتحويل',
+            'notes': 'الملاحظات',
+            'status': 'الحالة'
+        })
+        st.dataframe(display_df, use_container_width=True)
         st.divider()
         
+        # نموذج الاستلام
         st.subheader("تأكيد استلام تحويلة")
         col_rec1, col_rec2, col_rec3 = st.columns(3)
         
-        selected_id = col_rec1.selectbox("اختر رقم التحويلة للاستلام:", df_incoming['id'].tolist(), 
-                                         format_func=lambda x: f"تحويلة رقم: {df_incoming[df_incoming['id']==x]['رقم التحويلة'].values[0]} من {df_incoming[df_incoming['id']==x]['الفرع المرسل'].values[0]}")
+        options = {row['id']: f"تحويلة رقم: {row['transfer_code']} من فرع {row['from_branch']}" for row in incoming_data}
+        selected_id = col_rec1.selectbox("اختر رقم التحويلة للاستلام:", list(options.keys()), format_func=lambda x: options[x])
         receiver_name = col_rec2.text_input("القائم بالاستلام (اسم الموظف المستلم):")
         receipt_date = col_rec3.date_input("تاريخ الاستلام", value=datetime.today())
         
@@ -268,16 +281,13 @@ with tab2:
             if not receiver_name:
                 st.error("⚠️ يرجى كتابة اسم الموظف المستلم.")
             else:
-                conn = sqlite3.connect(DB_FILE)
-                c = conn.cursor()
-                c.execute('''
-                    UPDATE transfers 
-                    SET receiver_name = ?, receipt_date = ?, status = 'تم الاستلام'
-                    WHERE id = ?
-                ''', (receiver_name, str(receipt_date), selected_id))
-                conn.commit()
-                conn.close()
-                st.success("🎉 تم تأكيد استلام التحويلة وتحديث السجل بنجاح!")
+                update_data = {
+                    "receiver_name": receiver_name,
+                    "receipt_date": str(receipt_date),
+                    "status": "تم الاستلام"
+                }
+                supabase.table("transfers").update(update_data).eq("id", selected_id).execute()
+                st.success("🎉 تم تأكيد استلام التحويلة وتحديث قاعدة البيانات السحابية!")
                 st.rerun()
 
 # --- التبويب الثالث: سجل التحويلات الكلي ---
