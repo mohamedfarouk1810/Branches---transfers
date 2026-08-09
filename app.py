@@ -1,12 +1,15 @@
-from autorun import autorun
-
-# تحديث الصفحة تلقائياً كل 30 ثانية
-autorun(interval=30000)
-
 import streamlit as st
 import pandas as pd
 from supabase import create_client, Client
 from datetime import datetime
+
+# ==========================================
+# إعدادات الصفحة والتحديث التلقائي المدمج
+# ==========================================
+st.set_page_config(page_title="نظام تحويلات الفروع", page_icon="📦", layout="wide")
+
+# زر يدوي سريع أو إعادة تحميل تلقائي بـ HTML بسيط لو محتاجه
+
 
 # ==========================================
 # 1. إعدادات الصفحة
