@@ -99,9 +99,12 @@ with tab1:
 with tab2:
     st.subheader(f"التحويلات الواردة إلى فرع [{current_branch}] (بانتظار التأكيد)")
     
-    res = supabase.table("transfers").select("*").eq("target_branch", current_branch).eq("status", "قيد الانتظار").execute()
-    incoming_data = res.data
-    
+        if current_branch:
+        res = supabase.table("transfers").select("*").eq("target_branch", current_branch).execute()
+        incoming_data = res.data
+    else:
+        incoming_data = []
+
     if not incoming_data:
         st.info("✨ لا توجد تحويلات قيد الانتظار لهذا الفرع حالياً.")
     else:
