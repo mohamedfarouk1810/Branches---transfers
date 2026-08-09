@@ -1,3 +1,8 @@
+from autorun import autorun
+
+# تحديث الصفحة تلقائياً كل 30 ثانية
+autorun(interval=30000)
+
 import streamlit as st
 import pandas as pd
 from supabase import create_client, Client
