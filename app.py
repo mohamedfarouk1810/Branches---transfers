@@ -229,7 +229,7 @@ tab1, tab2, tab3 = st.tabs(["📤 تسجيل تحويل جديد (إرسال)", 
 with tab1:
     st.subheader("إرسال تحويل جديد إلى فرع آخر")
     
-    with st.form("new_transfer_form2", clear_on_submit=True):
+    with st.form("new_transfer_form", clear_on_submit=True):
         col1, col2, col3 = st.columns(3)
         
         with col1:
