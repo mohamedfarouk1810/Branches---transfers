@@ -181,7 +181,7 @@ st.markdown("<div class='main-header'><h1>📦 نظام تسجيل واستلا�
 # ==========================================
 # 2. إعداد قاعدة البيانات (SQLite)
 # ==========================================
-DB_FILE = "transfers_db.sqlite"DB_FILE = "transfers.db"  # أو الاسم الذي تستخدمه
+DB_FILE = "transfers.db"  # أو الاسم الذي تستخدمه
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
