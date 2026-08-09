@@ -98,14 +98,14 @@ with tab1:
 # --- التبويب الثاني: استلام التحويلات الواردة ---
 with tab2:
     st.subheader(f"التحويلات الواردة إلى فرع [{current_branch}] (بانتظار التأكيد)")
-    
-        try:
-        if current_branch:
+       
+       try:
+       if current_branch:
             res = supabase.table("transfers").select("*").eq("target_branch", str(current_branch)).execute()
             incoming_data = res.data
-        else:
+       else:
             incoming_data = []
-        except Exception as e:
+       except Exception as e:
         st.error(f"تنبيه من قاعدة البيانات: {e}")
         incoming_data = []
 
