@@ -99,7 +99,7 @@ with tab1:
 with tab2:
     st.subheader(f"التحويلات الواردة إلى فرع [{current_branch}] (بانتظار التأكيد)")
     
-        if current_branch:
+    if current_branch:
         res = supabase.table("transfers").select("*").eq("target_branch", current_branch).execute()
         incoming_data = res.data
     else:
