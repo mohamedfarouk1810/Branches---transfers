@@ -99,15 +99,19 @@ with tab1:
 with tab2:
     st.subheader(f"التحويلات الواردة إلى فرع [{current_branch}] (بانتظار التأكيد)")
     
-    if current_branch:
-        res = supabase.table("transfers").select("*").eq("target_branch", current_branch).execute()
-        incoming_data = res.data
-    else:
+        try:
+        if current_branch:
+            res = supabase.table("transfers").select("*").eq("target_branch", str(current_branch)).execute()
+            incoming_data = res.data
+        else:
+            incoming_data = []
+        except Exception as e:
+        st.error(f"تنبيه من قاعدة البيانات: {e}")
         incoming_data = []
 
-    if not incoming_data:
+       if not incoming_data:
         st.info("✨ لا توجد تحويلات قيد الانتظار لهذا الفرع حالياً.")
-    else:
+       else:
         df_incoming = pd.DataFrame(incoming_data)
         display_df = df_incoming[['from_branch', 'transfer_date', 'transfer_code', 'sender_name', 'notes', 'status']].rename(columns={
             'from_branch': 'الفرع المرسل',
