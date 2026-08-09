@@ -144,28 +144,36 @@ with tab2:
                 supabase.table("transfers").update(update_data).eq("id", selected_id).execute()
                 st.success("🎉 تم تأكيد استلام التحويلة وتحديث قاعدة البيانات السحابية!")
                 st.rerun()
-
+                
 # --- التبويب الثالث: سجل التحويلات الكلي ---
 with tab3:
-    st.subheader("📋 السجل العام لكافة التحويلات بين الفروع")
-    
-    res_all = supabase.table("transfers").select("*").order("id", desc=True).execute()
-    if res_all.data:
-        df_all = pd.DataFrame(res_all.data)
-        df_all_renamed = df_all[['from_branch', 'transfer_date', 'transfer_code', 'sender_name', 'target_branch', 'receiver_name', 'receipt_date', 'status', 'notes']].rename(columns={
-            'from_branch': 'الفرع',
-            'transfer_date': 'تاريخ التحويل',
-            'transfer_code': 'رقم التحويلة',
-            'sender_name': 'القائم بالتحويل',
-            'target_branch': 'الفرع المحول إليه',
-            'receiver_name': 'القائم بالاستلام',
-            'receipt_date': 'تاريخ الاستلام',
-            'status': 'الحالة',
-            'notes': 'ملحوظات'
-        })
-        st.dataframe(df_all_renamed, use_container_width=True)
-    else:
-        st.info("لا توجد تحويلات مسجلة بعد.")
+    st.subheader("السجل العام لكافة التحويلات بين الفروع 📋")
+
+    try:
+        res_all = supabase.table("transfers").select("*").order("id", desc=True).execute()
+        
+        if res_all.data:
+            df_all = pd.DataFrame(res_all.data)
+            
+            # إعادة تسمية الأعمدة للعرض باللغة العربية
+            df_all_renamed = df_all.rename(columns={
+                'from_branch': 'الفرع',
+                'transfer_date': 'تاريخ التحويل',
+                'transfer_code': 'رقم التحويلة',
+                'sender_name': 'القائم بالتحويل',
+                'target_branch': 'الفرع المحول إليه',
+                'receiver_name': 'القائم بالإستلام',
+                'receipt_date': 'تاريخ الاستلام',
+                'status': 'الحالة',
+                'notes': 'ملحوظات'
+            })
+            
+            st.dataframe(df_all_renamed, use_container_width=True)
+        else:
+            st.info("لا توجد تحويلات مسجلة بعد.")
+            
+    except Exception as e:
+        st.error(f"تنبيه من قاعدة البيانات: {e}")
 
 st.markdown("<div class='main-header'><h1>📦 نظام تسجيل واستلام التحويلات بين الفروع</h1></div>", unsafe_allow_html=True)
 
