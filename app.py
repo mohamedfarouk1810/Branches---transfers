@@ -105,7 +105,7 @@ try:
             incoming_data = res.data
        else:
             incoming_data = []
-       except Exception as e:
+        except Exception as e:
         st.error(f"تنبيه من قاعدة البيانات: {e}")
         incoming_data = []
 
