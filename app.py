@@ -1,11 +1,10 @@
-import sqlite3
 import streamlit as st
 import pandas as pd
 from supabase import create_client, Client
 from datetime import datetime
 
 # ==========================================
-# إعدادات الصفحة والتحديث التلقائي المدمج
+# 1. إعدادات الصفحة والتحديث التلقائي المدمج
 # ==========================================
 st.set_page_config(
     page_title="نظام تحويلات الفروع",
@@ -15,7 +14,6 @@ st.set_page_config(
 )
 
 # واجهة عربية RTL بدون تطبيق direction على كل عناصر Streamlit الداخلية.
-# هذا يمنع ظهور الحروف العربية حرفاً تحت حرف على الموبايل.
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
@@ -107,7 +105,6 @@ st.markdown(
 # ==========================================
 # 2. الاتصال بقاعدة بيانات Supabase
 # ==========================================
-# يمكنك وضع القيم هنا مباشرة أو في Secrets
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
 
@@ -165,28 +162,31 @@ with tab1:
             if not transfer_code or not sender_name:
                 st.error("⚠️ يرجى ملء كافة البيانات الأساسية (رقم التحويلة واسم الموظف).")
             else:
-                data = {
-                    "from_branch": from_b,
-                    "transfer_date": str(transfer_date),
-                    "transfer_code": transfer_code,
-                    "sender_name": sender_name,
-                    "target_branch": target_branch,
-                    "notes": notes,
-                    "status": "قيد الانتظار"
-                }
-                supabase.table("transfers").insert(data).execute()
-                st.success(f"✅ تم تسجيل التحويلة رقم ({transfer_code}) بنجاح في السحابة!")
-                st.rerun()
+                try:
+                    data = {
+                        "from_branch": from_b,
+                        "transfer_date": str(transfer_date),
+                        "transfer_code": transfer_code,
+                        "sender_name": sender_name,
+                        "target_branch": target_branch,
+                        "notes": notes,
+                        "status": "قيد الانتظار"
+                    }
+                    supabase.table("transfers").insert(data).execute()
+                    st.success(f"✅ تم تسجيل التحويلة رقم ({transfer_code}) بنجاح في السحابة!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ حدث خطأ أثناء إرسال البيانات: {e}")
 
 # --- التبويب الثاني: استلام التحويلات الواردة ---
 with tab2:
     st.subheader(f"التحويلات الواردة إلى فرع [{current_branch}] (بانتظار التأكيد)")
        
     try:
-       if current_branch:
+        if current_branch:
             res = (supabase.table("transfers").select("*").eq("target_branch", str(current_branch)).eq("status", "قيد الانتظار").execute())
             incoming_data = res.data
-       else:
+        else:
             incoming_data = []
     except Exception as e:
         st.error(f"تنبيه من قاعدة البيانات: {e}")
@@ -219,14 +219,17 @@ with tab2:
             if not receiver_name:
                 st.error("⚠️ يرجى كتابة اسم الموظف المستلم.")
             else:
-                update_data = {
-                    "receiver_name": receiver_name,
-                    "receipt_date": str(receipt_date),
-                    "status": "تم الاستلام"
-                }
-                supabase.table("transfers").update(update_data).eq("id", selected_id).execute()
-                st.success("🎉 تم تأكيد استلام التحويلة وتحديث قاعدة البيانات السحابية!")
-                st.rerun()
+                try:
+                    update_data = {
+                        "receiver_name": receiver_name,
+                        "receipt_date": str(receipt_date),
+                        "status": "تم الاستلام"
+                    }
+                    supabase.table("transfers").update(update_data).eq("id", selected_id).execute()
+                    st.success("🎉 تم تأكيد استلام التحويلة وتحديث قاعدة البيانات السحابية!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"❌ حدث خطأ أثناء تأكيد الاستلام: {e}")
                 
 # --- التبويب الثالث: سجل التحويلات الكلي ---
 with tab3:
@@ -238,16 +241,24 @@ with tab3:
         if res_all.data:
             df_all = pd.DataFrame(res_all.data)
             
-            # إعادة تسمية الأعمدة للعرض باللغة العربية
-            df_all_renamed = df_all.rename(columns={
-                'from_branch': 'الفرع',
-                'transfer_date': 'تاريخ التحويل',
+            # فلترة الأعمدة المعروضة وتحديد الترتيب المناسب
+            cols_to_show = [
+                'transfer_code', 'from_branch', 'target_branch', 
+                'transfer_date', 'sender_name', 'status', 
+                'receipt_date', 'receiver_name', 'notes'
+            ]
+            # التأكد من وجود الأعمدة قبل اختيارها
+            existing_cols = [c for c in cols_to_show if c in df_all.columns]
+            
+            df_all_renamed = df_all[existing_cols].rename(columns={
                 'transfer_code': 'رقم التحويلة',
+                'from_branch': 'من فرع',
+                'target_branch': 'إلى فرع',
+                'transfer_date': 'تاريخ التحويل',
                 'sender_name': 'القائم بالتحويل',
-                'target_branch': 'الفرع المحول إليه',
-                'receiver_name': 'القائم بالاستلام',
-                'receipt_date': 'تاريخ الاستلام',
                 'status': 'الحالة',
+                'receipt_date': 'تاريخ الاستلام',
+                'receiver_name': 'القائم بالاستلام',
                 'notes': 'ملحوظات'
             })
             
