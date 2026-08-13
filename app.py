@@ -111,20 +111,59 @@ with st.sidebar:
     st.divider()
     st.markdown("### 🔔 إشعارات التنبيه")
    
-    # زر تفعيل الإشعارات بمتصفح المستخدم
+    # مكون تفاعلي يختفي فور السماح بالإشعارات
     components.html("""
-        <button onclick="Notification.requestPermission().then(p => alert(p === 'granted' ? 'تم تفعيل الإشعارات بنجاح!' : 'تم رفض الإشعارات'))"
-        style="
-            background-color: #0d6efd;
-            color: white;
-            border: none;
-            padding: 10px 14px;
-            border-radius: 8px;
-            cursor: pointer;
-            width: 100%;
-            font-family: Cairo, sans-serif;
-            font-weight: bold;
-        ">🔔 تفعيل إشعارات المتصفح</button>
+        <div id="notif-box">
+            <button id="notif-btn" onclick="requestPermission()" style="
+                background-color: #0d6efd;
+                color: white;
+                border: none;
+                padding: 10px 14px;
+                border-radius: 8px;
+                cursor: pointer;
+                width: 100%;
+                font-family: Cairo, sans-serif;
+                font-weight: bold;
+                font-size: 14px;
+            ">🔔 تفعيل إشعارات المتصفح</button>
+           
+            <div id="notif-active" style="
+                display: none;
+                background-color: #d1e7dd;
+                color: #0f5132;
+                padding: 8px 12px;
+                border-radius: 8px;
+                text-align: center;
+                font-family: Cairo, sans-serif;
+                font-weight: bold;
+                font-size: 13px;
+                border: 1px solid #badbcc;
+            ">
+                ✅ الإشعارات مفعلة على هذا الجهاز
+            </div>
+        </div>
+
+        <script>
+        function updateUI() {
+            if (Notification.permission === "granted") {
+                document.getElementById("notif-btn").style.display = "none";
+                document.getElementById("notif-active").style.display = "block";
+            }
+        }
+
+        function requestPermission() {
+            Notification.requestPermission().then(permission => {
+                if (permission === "granted") {
+                    updateUI();
+                } else if (permission === "denied") {
+                    alert("⚠️ الإشعارات محظورة. يرجى تفعيلها من إعدادات المتصفح (رمز القفل بجوار رابط الموقع).");
+                }
+            });
+        }
+
+        // الفحص التلقائي فور فتح الصفحة
+        updateUI();
+        </script>
     """, height=50)
 
 # ==========================================
