@@ -18,10 +18,19 @@ st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
 
-    html, body, [class*="st-"] {
+    /* تطبيق خط Cairo على النصوص والعناصر الأساسية فقط */
+    html, body, .stApp, p, h1, h2, h3, h4, h5, h6, label, input, textarea, button, [data-testid="stMarkdownContainer"] {
         font-family: 'Cairo', Tahoma, Arial, sans-serif !important;
     }
 
+    /* استثناء أيقونات Streamlit من خط Cairo لإظهارها بشكل صحيح */
+    [data-testid="stIconMaterial"],
+    [data-testid="stSidebarCollapseButton"] *,
+    [data-testid="collapsedControl"] * {
+        font-family: 'Material Symbols Rounded', 'Material Icons' !important;
+    }
+
+    /* ضبط اتجاه القراءة للعربية */
     .stMarkdown, p, h1, h2, h3, h4, label {
         direction: rtl !important;
         text-align: right !important;
@@ -45,11 +54,6 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
-st.markdown(
-    "<div class='main-header'><h1>📦 نظام تسجيل واستلام التحويلات بين الفروع</h1></div>",
-    unsafe_allow_html=True
-)
 
 # ==========================================
 # 2. أدوات الإشعارات والتنبيهات (Web + Sound)
