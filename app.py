@@ -1,12 +1,13 @@
 import streamlit as st
 import pandas as pd
 from supabase import create_client, Client
-from datetime import datetime
-import streamlit.components.v1 as components
+from datetime import datetime, date
 
-# ==========================================
-# 1. إعدادات الصفحة والتنسيق العام
-# ==========================================
+# =========================================================
+# Branch Transfers V2
+# Requires Supabase tables from schema.sql
+# =========================================================
+
 st.set_page_config(
     page_title="نظام تحويلات الفروع",
     page_icon="📦",
@@ -16,313 +17,369 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
-
-    /* تطبيق خط Cairo على النصوص والعناصر الأساسية فقط */
-    html, body, .stApp, p, h1, h2, h3, h4, h5, h6, label, input, textarea, button, [data-testid="stMarkdownContainer"] {
-        font-family: 'Cairo', Tahoma, Arial, sans-serif !important;
-    }
-
-    /* استثناء أيقونات Streamlit من خط Cairo لإظهارها بشكل صحيح */
-    [data-testid="stIconMaterial"],
-    [data-testid="stSidebarCollapseButton"] *,
-    [data-testid="collapsedControl"] * {
-        font-family: 'Material Symbols Rounded', 'Material Icons' !important;
-    }
-
-    /* ضبط اتجاه القراءة للعربية */
-    .stMarkdown, p, h1, h2, h3, h4, label {
-        direction: rtl !important;
-        text-align: right !important;
-        white-space: normal !important;
-        word-break: normal !important;
-    }
-
-    .main-header {
-        background: #0d6efd;
-        color: white;
-        padding: 12px;
-        border-radius: 10px;
-        text-align: center;
-        margin-bottom: 16px;
-    }
-
-    .main-header h1 {
-        margin: 0;
-        font-size: clamp(20px, 4vw, 32px);
-        line-height: 1.4;
-    }
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap');
+html, body, .stApp, p, h1, h2, h3, h4, h5, h6, label, input, textarea, button,
+[data-testid="stMarkdownContainer"], [data-testid="stDataFrame"] {
+    font-family: 'Cairo', Tahoma, Arial, sans-serif !important;
+}
+.stMarkdown, p, h1, h2, h3, h4, label {
+    direction: rtl !important;
+    text-align: right !important;
+}
+.metric-card {
+    padding: 14px;
+    border-radius: 12px;
+    border: 1px solid #ddd;
+    background: #fff;
+}
+.status-pending {color:#b26a00;font-weight:700}
+.status-received {color:#087f5b;font-weight:700}
+.status-cancelled {color:#c92a2a;font-weight:700}
 </style>
 """, unsafe_allow_html=True)
 
-# ==========================================
-# 2. أدوات الإشعارات والتنبيهات (Web + Sound)
-# ==========================================
-def trigger_browser_notification(title, body):
-    """إرسال إشعار متصفح ناطق"""
-    js_code = f"""
-    <script>
-    if (Notification.permission === "granted") {{
-        new Notification("{title}", {{
-            body: "{body}",
-            icon: "https://em-content.zobj.net/source/apple/391/package_1f4e6.png"
-        }});
-    }}
-    </script>
-    """
-    components.html(js_code, height=0, width=0)
-
-def play_alert_sound():
-    """تشغيل صوت تنبيه خفيف"""
-    sound_html = """
-    <audio autoplay>
-        <source src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" type="audio/mpeg">
-    </audio>
-    """
-    components.html(sound_html, height=0, width=0)
-
-# ==========================================
-# 3. الاتصال بقاعدة بيانات Supabase
-# ==========================================
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
 
+if not SUPABASE_URL or not SUPABASE_KEY:
+    st.error("بيانات Supabase غير موجودة في Streamlit Secrets.")
+    st.stop()
+
 @st.cache_resource
-def init_supabase(url: str, key: str) -> Client:
+def get_supabase(url: str, key: str) -> Client:
     return create_client(url, key)
 
-supabase = None
-if not SUPABASE_URL or not SUPABASE_KEY:
-    st.error(
-        "⚠️ بيانات Supabase غير مضبوطة. أضف SUPABASE_URL و SUPABASE_KEY "
-        "في Streamlit Secrets ثم أعد تشغيل التطبيق."
-    )
-    st.stop()
-
-try:
-    supabase = init_supabase(SUPABASE_URL, SUPABASE_KEY)
-except Exception as e:
-    st.error(f"⚠️ تعذر الاتصال بـ Supabase: {e}")
-    st.stop()
+supabase = get_supabase(SUPABASE_URL, SUPABASE_KEY)
 
 BRANCHES = ["دمياط", "المعادي", "المطار", "الجلاء", "المهندسين"]
+ROLES = ["admin", "manager", "employee"]
 
-# --- الشريط الجانبي ---
+def db_error(e):
+    st.error(f"حدث خطأ في قاعدة البيانات: {e}")
+
+def login():
+    st.markdown("<h1 style='text-align:center'>📦 نظام تحويلات الفروع</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align:center'>تسجيل الدخول</p>", unsafe_allow_html=True)
+
+    with st.form("login_form"):
+        username = st.text_input("اسم المستخدم")
+        password = st.text_input("كلمة المرور", type="password")
+        submitted = st.form_submit_button("دخول", use_container_width=True)
+
+    if submitted:
+        if not username or not password:
+            st.error("أدخل اسم المستخدم وكلمة المرور.")
+            return
+
+        try:
+            res = (supabase.table("app_users")
+                   .select("*")
+                   .eq("username", username.strip())
+                   .eq("is_active", True)
+                   .limit(1)
+                   .execute())
+            users = res.data or []
+
+            if not users or users[0]["password"] != password:
+                st.error("اسم المستخدم أو كلمة المرور غير صحيحة.")
+                return
+
+            st.session_state.user = users[0]
+            st.rerun()
+        except Exception as e:
+            db_error(e)
+
+if "user" not in st.session_state:
+    login()
+    st.stop()
+
+user = st.session_state.user
+current_branch = user["branch"]
+role = user["role"]
+
 with st.sidebar:
-    st.header("⚙️ إعدادات الجهاز")
-    current_branch = st.selectbox("اختر الفرع الحالي للجهاز:", BRANCHES)
-   
+    st.markdown(f"### 👤 {user['full_name']}")
+    st.markdown(f"**الفرع:** {current_branch}")
+    st.markdown(f"**الصلاحية:** {role}")
+
+    if st.button("🚪 تسجيل الخروج", use_container_width=True):
+        st.session_state.clear()
+        st.rerun()
+
     st.divider()
-    st.markdown("### 🔔 إشعارات التنبيه")
-   
-    # مكون تفاعلي يختفي فور السماح بالإشعارات
-    components.html("""
-        <div id="notif-box">
-            <button id="notif-btn" onclick="requestPermission()" style="
-                background-color: #0d6efd;
-                color: white;
-                border: none;
-                padding: 10px 14px;
-                border-radius: 8px;
-                cursor: pointer;
-                width: 100%;
-                font-family: Cairo, sans-serif;
-                font-weight: bold;
-                font-size: 14px;
-            ">🔔 تفعيل إشعارات المتصفح</button>
-           
-            <div id="notif-active" style="
-                display: none;
-                background-color: #d1e7dd;
-                color: #0f5132;
-                padding: 8px 12px;
-                border-radius: 8px;
-                text-align: center;
-                font-family: Cairo, sans-serif;
-                font-weight: bold;
-                font-size: 13px;
-                border: 1px solid #badbcc;
-            ">
-                ✅ الإشعارات مفعلة على هذا الجهاز
-            </div>
-        </div>
+    st.caption("الإصدار V2")
 
-        <script>
-        function updateUI() {
-            if (Notification.permission === "granted") {
-                document.getElementById("notif-btn").style.display = "none";
-                document.getElementById("notif-active").style.display = "block";
-            }
-        }
+# ---------------------------------------------------------
+# Data helpers
+# ---------------------------------------------------------
+def get_transfers():
+    q = supabase.table("transfers").select("*").order("id", desc=True)
+    if role != "admin":
+        q = q.or_(f"from_branch.eq.{current_branch},target_branch.eq.{current_branch}")
+    return q.execute().data or []
 
-        function requestPermission() {
-            Notification.requestPermission().then(permission => {
-                if (permission === "granted") {
-                    updateUI();
-                } else if (permission === "denied") {
-                    alert("⚠️ الإشعارات محظورة. يرجى تفعيلها من إعدادات المتصفح (رمز القفل بجوار رابط الموقع).");
-                }
-            });
-        }
+def get_products():
+    return supabase.table("products").select("*").eq("is_active", True).order("name").execute().data or []
 
-        // الفحص التلقائي فور فتح الصفحة
-        updateUI();
-        </script>
-    """, height=50)
+# ---------------------------------------------------------
+# Header
+# ---------------------------------------------------------
+st.markdown(
+    f'<div class="main-header"><h1>📦 نظام تحويلات الفروع — {current_branch}</h1></div>',
+    unsafe_allow_html=True
+)
 
-# ==========================================
-# 4. تبويبات النظام
-# ==========================================
-tab1, tab2, tab3 = st.tabs(["📤 تسجيل تحويل جديد (إرسال)", "📥 استلام التحويلات الواردة", "📊 سجل التحويلات الشامل"])
+# ---------------------------------------------------------
+# Dashboard
+# ---------------------------------------------------------
+try:
+    transfers = get_transfers()
+except Exception as e:
+    db_error(e)
+    transfers = []
 
-# --- التبويب الأول: إرسال تحويل ---
-with tab1:
-    st.subheader("إرسال تحويل جديد إلى فرع آخر")
-   
-    with st.form("new_transfer_form", clear_on_submit=True):
-        col1, col2, col3 = st.columns(3)
-       
-        with col1:
-            from_b = st.selectbox("الفرع المصدر:", [current_branch] + [b for b in BRANCHES if b != current_branch])
-            transfer_date = st.date_input("تاريخ التحويل", value=datetime.today())
-           
-        with col2:
-            transfer_code = st.text_input("رقم التحويلة / الفاتورة:")
-            sender_name = st.text_input("القائم بالتحويل (اسم الموظف):")
-           
-        with col3:
-            target_branch = st.selectbox("الفرع المحول إليه:", [b for b in BRANCHES if b != from_b])
-            notes = st.text_area("ملحوظات / الأصناف المحولة:", height=100)
-           
-        submit_btn = st.form_submit_button("🚀 إرسال التحويلة", use_container_width=True)
-       
-        if submit_btn:
-            if not transfer_code or not sender_name:
-                st.error("⚠️ يرجى ملء كافة البيانات الأساسية (رقم التحويلة واسم الموظف).")
+df = pd.DataFrame(transfers)
+
+if not df.empty:
+    if role == "admin":
+        pending = int((df["status"] == "قيد الانتظار").sum())
+        received = int((df["status"] == "تم الاستلام").sum())
+        cancelled = int((df["status"] == "ملغي").sum())
+    else:
+        pending = int(((df["status"] == "قيد الانتظار") & (df["target_branch"] == current_branch)).sum())
+        received = int((df["status"] == "تم الاستلام").sum())
+        cancelled = int((df["status"] == "ملغي").sum())
+else:
+    pending = received = cancelled = 0
+
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("📦 إجمالي التحويلات", len(df))
+m2.metric("⏳ قيد الانتظار", pending)
+m3.metric("✅ تم الاستلام", received)
+m4.metric("❌ ملغي", cancelled)
+
+tab_send, tab_receive, tab_history, tab_reports = st.tabs(
+    ["📤 إرسال تحويل", "📥 الاستلام", "📋 السجل", "📊 التقارير"]
+)
+
+# ---------------------------------------------------------
+# Send
+# ---------------------------------------------------------
+with tab_send:
+    st.subheader("📤 تسجيل تحويل جديد")
+
+    products = get_products()
+    if not products:
+        st.warning("لا توجد أصناف في قاعدة البيانات. أضف الأصناف أولًا من Supabase.")
+    else:
+        product_map = {p["id"]: f'{p["name"]} — {p.get("code","")}' for p in products}
+
+        target_options = [b for b in BRANCHES if b != current_branch]
+        target = st.selectbox("الفرع المستلم", target_options)
+        transfer_date = st.date_input("تاريخ التحويل", value=date.today())
+        sender = st.text_input("اسم القائم بالتحويل", value=user["full_name"])
+        notes = st.text_area("ملاحظات")
+
+        st.markdown("### الأصناف")
+        item_rows = []
+
+        for i in range(10):
+            c1, c2, c3 = st.columns([5, 2, 2])
+            with c1:
+                pid = st.selectbox(
+                    f"الصنف {i+1}",
+                    [None] + list(product_map.keys()),
+                    format_func=lambda x: "— اختر صنفًا —" if x is None else product_map[x],
+                    key=f"pid_{i}",
+                )
+            with c2:
+                qty = st.number_input(f"الكمية {i+1}", min_value=0.0, step=1.0, key=f"qty_{i}")
+            with c3:
+                if pid is not None:
+                    st.write(f"الكود: {next((p.get('code','') for p in products if p['id']==pid), '')}")
+            if pid is not None and qty > 0:
+                item_rows.append({"product_id": pid, "quantity": qty})
+
+        if st.button("🚀 إرسال التحويلة", type="primary", use_container_width=True):
+            if not sender.strip():
+                st.error("اكتب اسم الموظف القائم بالتحويل.")
+            elif not item_rows:
+                st.error("أضف صنفًا واحدًا على الأقل بكمية أكبر من صفر.")
             else:
                 try:
-                    data = {
-                        "from_branch": from_b,
+                    # Generate readable transfer number
+                    stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+                    transfer_code = f"TR-{stamp}"
+
+                    transfer = {
+                        "from_branch": current_branch,
+                        "target_branch": target,
                         "transfer_date": str(transfer_date),
                         "transfer_code": transfer_code,
-                        "sender_name": sender_name,
-                        "target_branch": target_branch,
-                        "notes": notes,
-                        "status": "قيد الانتظار"
+                        "sender_name": sender.strip(),
+                        "notes": notes.strip(),
+                        "status": "قيد الانتظار",
+                        "created_by": user["id"],
                     }
-                    supabase.table("transfers").insert(data).execute()
-                   
-                    # تنبيه عائم سريع عند الإرسال
-                    st.toast(f"تم إرسال التحويلة رقم {transfer_code} إلى فرع {target_branch}", icon="🚀")
-                    st.success(f"✅ تم تسجيل التحويلة رقم ({transfer_code}) بنجاح في السحابة!")
+                    result = supabase.table("transfers").insert(transfer).execute()
+                    transfer_id = result.data[0]["id"]
+
+                    rows = [
+                        {
+                            "transfer_id": transfer_id,
+                            "product_id": x["product_id"],
+                            "quantity": x["quantity"],
+                        }
+                        for x in item_rows
+                    ]
+                    supabase.table("transfer_items").insert(rows).execute()
+
+                    supabase.table("transfer_logs").insert({
+                        "transfer_id": transfer_id,
+                        "user_id": user["id"],
+                        "action": "إنشاء تحويل",
+                        "details": f"تحويل {transfer_code} من {current_branch} إلى {target}",
+                    }).execute()
+
+                    st.success(f"تم إنشاء التحويلة {transfer_code} بنجاح.")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"❌ حدث خطأ أثناء إرسال البيانات: {e}")
+                    db_error(e)
 
-# --- التبويب الثاني: استلام التحويلات الواردة ---
-with tab2:
-    st.subheader(f"التحويلات الواردة إلى فرع [{current_branch}] (بانتظار التأكيد)")
-      
-    try:
-        if current_branch:
-            res = (supabase.table("transfers")
-                   .select("*")
-                   .eq("target_branch", str(current_branch))
-                   .eq("status", "قيد الانتظار")
-                   .execute())
-            incoming_data = res.data
-        else:
-            incoming_data = []
-    except Exception as e:
-        st.error(f"تنبيه من قاعدة البيانات: {e}")
-        incoming_data = []
+# ---------------------------------------------------------
+# Receive
+# ---------------------------------------------------------
+with tab_receive:
+    st.subheader(f"📥 التحويلات الواردة إلى {current_branch}")
 
-    if not incoming_data:
-        st.info("✨ لا توجد تحويلات قيد الانتظار لهذا الفرع حالياً.")
+    incoming = [
+        x for x in transfers
+        if x.get("target_branch") == current_branch and x.get("status") == "قيد الانتظار"
+    ]
+
+    if not incoming:
+        st.info("لا توجد تحويلات معلقة حاليًا.")
     else:
-        # 🚨 تشغيل الإشعارات والصوت في حالة وجود شحنات معلقة للفرع الحالي
-        count_pending = len(incoming_data)
-        latest_item = incoming_data[0]
-       
-        # 1. إشعار عائم في الواجهة
-        st.toast(f"🔔 يوجد {count_pending} تحويلة بانتظار الاستلام لفرع {current_branch}!", icon="📦")
-       
-        # 2. إشعار المتصفح وصوت التنبيه
-        trigger_browser_notification(
-            title=f"تنبيه شحنة واردة - فرع {current_branch}",
-            body=f"وصلت تحويلة رقم {latest_item['transfer_code']} من فرع {latest_item['from_branch']}"
+        options = {x["id"]: f'{x["transfer_code"]} — من {x["from_branch"]}' for x in incoming}
+        selected = st.selectbox(
+            "اختر التحويلة",
+            list(options.keys()),
+            format_func=lambda x: options[x],
         )
-        play_alert_sound()
+        receiver = st.text_input("اسم المستلم", value=user["full_name"])
+        receipt_date = st.date_input("تاريخ الاستلام", value=date.today())
 
-        df_incoming = pd.DataFrame(incoming_data)
-        display_df = df_incoming[['from_branch', 'transfer_date', 'transfer_code', 'sender_name', 'notes', 'status']].rename(columns={
-            'from_branch': 'الفرع المرسل',
-            'transfer_date': 'تاريخ التحويل',
-            'transfer_code': 'رقم التحويلة',
-            'sender_name': 'القائم بالتحويل',
-            'notes': 'الملاحظات',
-            'status': 'الحالة'
-        })
-        st.dataframe(display_df, use_container_width=True)
-        st.divider()
-       
-        st.subheader("تأكيد استلام تحويلة")
-        col_rec1, col_rec2, col_rec3 = st.columns(3)
-       
-        options = {row['id']: f"تحويلة رقم: {row['transfer_code']} من {row['from_branch']}" for row in incoming_data}
-        selected_id = col_rec1.selectbox("اختر رقم التحويلة للاستلام:", list(options.keys()), format_func=lambda x: options[x])
-        receiver_name = col_rec2.text_input("القائم بالاستلام (اسم الموظف المستلم):")
-        receipt_date = col_rec3.date_input("تاريخ الاستلام", value=datetime.today())
-       
-        if st.button("✅ تأكيد استلام الشحنة", type="primary"):
-            if not receiver_name:
-                st.error("⚠️ يرجى كتابة اسم الموظف المستلم.")
+        transfer = next(x for x in incoming if x["id"] == selected)
+
+        try:
+            items = (supabase.table("transfer_items")
+                     .select("*, products(name, code)")
+                     .eq("transfer_id", selected)
+                     .execute().data or [])
+            if items:
+                view = pd.DataFrame([{
+                    "الصنف": x["products"]["name"] if x.get("products") else "",
+                    "الكود": x["products"].get("code","") if x.get("products") else "",
+                    "الكمية": x["quantity"],
+                } for x in items])
+                st.dataframe(view, use_container_width=True, hide_index=True)
+        except Exception as e:
+            db_error(e)
+
+        if st.button("✅ تأكيد الاستلام", type="primary", use_container_width=True):
+            if not receiver.strip():
+                st.error("اكتب اسم الموظف المستلم.")
             else:
                 try:
-                    update_data = {
-                        "receiver_name": receiver_name,
+                    supabase.table("transfers").update({
+                        "receiver_name": receiver.strip(),
                         "receipt_date": str(receipt_date),
-                        "status": "تم الاستلام"
-                    }
-                    supabase.table("transfers").update(update_data).eq("id", selected_id).execute()
-                    st.toast("🎉 تم تأكيد الاستلام بنجاح!", icon="✅")
-                    st.success("🎉 تم تأكيد استلام التحويلة وتحديث قاعدة البيانات السحابية!")
+                        "status": "تم الاستلام",
+                    }).eq("id", selected).execute()
+
+                    supabase.table("transfer_logs").insert({
+                        "transfer_id": selected,
+                        "user_id": user["id"],
+                        "action": "تأكيد استلام",
+                        "details": f"تم استلام التحويلة {transfer['transfer_code']}",
+                    }).execute()
+
+                    st.success("تم تأكيد الاستلام.")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"❌ حدث خطأ أثناء تأكيد الاستلام: {e}")
-               
-# --- التبويب الثالث: سجل التحويلات الكلي ---
-with tab3:
-    st.subheader("السجل العام لكافة التحويلات بين الفروع 📋")
+                    db_error(e)
 
-    try:
-        res_all = supabase.table("transfers").select("*").order("id", desc=True).execute()
-       
-        if res_all.data:
-            df_all = pd.DataFrame(res_all.data)
-           
-            cols_to_show = [
-                'transfer_code', 'from_branch', 'target_branch',
-                'transfer_date', 'sender_name', 'status',
-                'receipt_date', 'receiver_name', 'notes'
+# ---------------------------------------------------------
+# History
+# ---------------------------------------------------------
+with tab_history:
+    st.subheader("📋 سجل التحويلات")
+
+    if df.empty:
+        st.info("لا توجد تحويلات.")
+    else:
+        c1, c2, c3 = st.columns(3)
+        search = c1.text_input("🔎 بحث برقم التحويلة")
+        status_filter = c2.selectbox("الحالة", ["الكل", "قيد الانتظار", "تم الاستلام", "ملغي"])
+        branch_filter = c3.selectbox("الفرع", ["الكل"] + BRANCHES)
+
+        view = df.copy()
+        if search:
+            view = view[view["transfer_code"].astype(str).str.contains(search, case=False, na=False)]
+        if status_filter != "الكل":
+            view = view[view["status"] == status_filter]
+        if branch_filter != "الكل":
+            view = view[
+                (view["from_branch"] == branch_filter) |
+                (view["target_branch"] == branch_filter)
             ]
-            existing_cols = [c for c in cols_to_show if c in df_all.columns]
-           
-            df_all_renamed = df_all[existing_cols].rename(columns={
-                'transfer_code': 'رقم التحويلة',
-                'from_branch': 'من فرع',
-                'target_branch': 'إلى فرع',
-                'transfer_date': 'تاريخ التحويل',
-                'sender_name': 'القائم بالتحويل',
-                'status': 'الحالة',
-                'receipt_date': 'تاريخ الاستلام',
-                'receiver_name': 'القائم بالاستلام',
-                'notes': 'ملحوظات'
-            })
-           
-            st.dataframe(df_all_renamed, use_container_width=True)
-        else:
-            st.info("لا توجد تحويلات مسجلة بعد.")
-           
-    except Exception as e:
-        st.error(f"تنبيه من قاعدة البيانات: {e}")
+
+        cols = [
+            "transfer_code", "from_branch", "target_branch",
+            "transfer_date", "sender_name", "status",
+            "receipt_date", "receiver_name", "notes"
+        ]
+        cols = [x for x in cols if x in view.columns]
+        labels = {
+            "transfer_code":"رقم التحويلة", "from_branch":"من فرع",
+            "target_branch":"إلى فرع", "transfer_date":"تاريخ التحويل",
+            "sender_name":"القائم بالتحويل", "status":"الحالة",
+            "receipt_date":"تاريخ الاستلام", "receiver_name":"المستلم",
+            "notes":"ملاحظات"
+        }
+        st.dataframe(view[cols].rename(columns=labels), use_container_width=True, hide_index=True)
+
+        st.download_button(
+            "⬇️ تنزيل Excel/CSV",
+            data=view.to_csv(index=False).encode("utf-8-sig"),
+            file_name="transfers_report.csv",
+            mime="text/csv",
+        )
+
+# ---------------------------------------------------------
+# Reports
+# ---------------------------------------------------------
+with tab_reports:
+    st.subheader("📊 تقرير التحويلات")
+
+    if df.empty:
+        st.info("لا توجد بيانات للتقرير.")
+    else:
+        by_branch = (
+            df.groupby(["from_branch", "target_branch"])
+              .size()
+              .reset_index(name="عدد التحويلات")
+              .sort_values("عدد التحويلات", ascending=False)
+        )
+        st.dataframe(by_branch, use_container_width=True, hide_index=True)
+
+        st.markdown("### حسب الحالة")
+        by_status = df["status"].value_counts().rename_axis("الحالة").reset_index(name="العدد")
+        st.bar_chart(by_status.set_index("الحالة"))
+
+# ---------------------------------------------------------
+# Admin
+# ---------------------------------------------------------
+if role == "admin":
+    st.sidebar.divider()
+    st.sidebar.success("أنت مدير النظام.")
