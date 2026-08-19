@@ -58,8 +58,14 @@ def db_error(e):
     st.error(f"حدث خطأ في قاعدة البيانات: {e}")
 
 def login():
-    st.markdown("<h1 style='text-align:center'>📦 نظام تحويلات الفروع</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align:center'>تسجيل الدخول</p>", unsafe_allow_html=True)
+    st.markdown(
+        "<h1 style='text-align:center'>📦 نظام تحويلات الفروع</h1>",
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        "<p style='text-align:center'>تسجيل الدخول — V2.1</p>",
+        unsafe_allow_html=True
+    )
 
     with st.form("login_form"):
         username = st.text_input("اسم المستخدم")
@@ -67,27 +73,55 @@ def login():
         submitted = st.form_submit_button("دخول", use_container_width=True)
 
     if submitted:
-        if not username or not password:
+        username_clean = username.strip()
+        password_clean = password.strip()
+
+        if not username_clean or not password_clean:
             st.error("أدخل اسم المستخدم وكلمة المرور.")
             return
 
         try:
-            res = (supabase.table("app_users")
-                   .select("*")
-                   .eq("username", username.strip())
-                   .eq("is_active", True)
-                   .limit(1)
-                   .execute())
+            # البحث باسم المستخدم فقط
+            res = (
+                supabase.table("app_users")
+                .select("id, username, password, full_name, branch, role, is_active")
+                .eq("username", username_clean)
+                .eq("is_active", True)
+                .limit(1)
+                .execute()
+            )
+
             users = res.data or []
 
-            if not users or users[0]["password"] != password:
-                st.error("اسم المستخدم أو كلمة المرور غير صحيحة.")
+            if not users:
+                st.error("اسم المستخدم غير موجود أو غير نشط.")
                 return
 
-            st.session_state.user = users[0]
+            db_user = users[0]
+            stored_password = str(db_user.get("password", "")).strip()
+
+            # تشخيص بدون إظهار كلمة المرور
+            if stored_password != password_clean:
+                st.error("كلمة المرور غير مطابقة.")
+
+                with st.expander("🔧 معلومات التشخيص"):
+                    st.write("نسخة البرنامج: V2.1")
+                    st.write(f"طول كلمة المرور المدخلة: {len(password_clean)}")
+                    st.write(f"طول كلمة المرور في قاعدة البيانات: {len(stored_password)}")
+                    st.write(
+                        f"اسم المستخدم الموجود في قاعدة البيانات: {db_user.get('username')}"
+                    )
+                    st.write(
+                        f"الحساب نشط: {db_user.get('is_active')}"
+                    )
+                return
+
+            st.session_state.user = db_user
+            st.success("تم تسجيل الدخول بنجاح.")
             st.rerun()
+
         except Exception as e:
-            db_error(e)
+            st.error(f"حدث خطأ في قاعدة البيانات: {e}")
 
 if "user" not in st.session_state:
     login()
