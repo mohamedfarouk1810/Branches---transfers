@@ -59,69 +59,85 @@ def db_error(e):
 
 def login():
     st.markdown(
-        "<h1 style='text-align:center'>📦 نظام تحويلات الفروع</h1>",
-        unsafe_allow_html=True
+        '<div class="main-header"><h1>📦 نظام تحويلات الفروع</h1></div>',
+        unsafe_allow_html=True,
     )
     st.markdown(
-        "<p style='text-align:center'>تسجيل الدخول — V2.1</p>",
-        unsafe_allow_html=True
+        "<p style='text-align:center'>تسجيل الدخول — V2.2</p>",
+        unsafe_allow_html=True,
     )
 
-    with st.form("login_form"):
-        username = st.text_input("اسم المستخدم")
-        password = st.text_input("كلمة المرور", type="password")
-        submitted = st.form_submit_button("دخول", use_container_width=True)
+    with st.form("login_form", clear_on_submit=False):
+        username = st.text_input("اسم المستخدم", placeholder="اكتب اسم المستخدم")
+        password = st.text_input("كلمة المرور", type="password", placeholder="اكتب كلمة المرور")
+        submitted = st.form_submit_button("دخول", use_container_width=True, type="primary")
 
-    if submitted:
-        username_clean = username.strip()
-        password_clean = password.strip()
+    if not submitted:
+        return
 
-        if not username_clean or not password_clean:
-            st.error("أدخل اسم المستخدم وكلمة المرور.")
+    username_clean = str(username).strip()
+    password_clean = str(password).strip()
+
+    if not username_clean or not password_clean:
+        st.error("⚠️ أدخل اسم المستخدم وكلمة المرور.")
+        return
+
+    try:
+        # ابحث باسم المستخدم فقط أولاً، حتى نعرف هل Streamlit يرى الحساب أصلًا.
+        response = (
+            supabase.table("app_users")
+            .select("id, username, password, full_name, branch, role, is_active")
+            .eq("username", username_clean)
+            .limit(1)
+            .execute()
+        )
+
+        users = response.data or []
+
+        if not users:
+            st.error("❌ اسم المستخدم غير موجود في قاعدة البيانات.")
+            with st.expander("🔧 تشخيص الاتصال"):
+                st.write("النسخة الحالية: V2.2")
+                st.write("اسم المستخدم المرسل:", repr(username_clean))
+                st.write("عدد النتائج:", len(users))
+                st.info(
+                    "إذا كان admin موجودًا في Supabase، فغالبًا Streamlit متصل "
+                    "بمشروع Supabase مختلف أو أن مفتاح الاتصال لا يطابق المشروع."
+                )
             return
 
-        try:
-            # البحث باسم المستخدم فقط
-            res = (
-                supabase.table("app_users")
-                .select("id, username, password, full_name, branch, role, is_active")
-                .eq("username", username_clean)
-                .eq("is_active", True)
-                .limit(1)
-                .execute()
-            )
+        db_user = users[0]
 
-            users = res.data or []
+        if not db_user.get("is_active"):
+            st.error("❌ المستخدم موجود ولكن الحساب غير نشط.")
+            return
 
-            if not users:
-                st.error("اسم المستخدم غير موجود أو غير نشط.")
-                return
+        stored_password = str(db_user.get("password", "")).strip()
 
-            db_user = users[0]
-            stored_password = str(db_user.get("password", "")).strip()
+        if stored_password != password_clean:
+            st.error("❌ اسم المستخدم أو كلمة المرور غير صحيحة.")
+            with st.expander("🔧 معلومات التشخيص"):
+                st.write("النسخة الحالية: V2.2")
+                st.write("اسم المستخدم الموجود:", db_user.get("username"))
+                st.write("الحساب نشط:", db_user.get("is_active"))
+                st.write("طول كلمة المرور المدخلة:", len(password_clean))
+                st.write("طول كلمة المرور في قاعدة البيانات:", len(stored_password))
+            return
 
-            # تشخيص بدون إظهار كلمة المرور
-            if stored_password != password_clean:
-                st.error("كلمة المرور غير مطابقة.")
+        st.session_state.user = {
+            "id": db_user["id"],
+            "username": db_user["username"],
+            "full_name": db_user["full_name"],
+            "branch": db_user["branch"],
+            "role": db_user["role"],
+            "is_active": db_user["is_active"],
+        }
+        st.rerun()
 
-                with st.expander("🔧 معلومات التشخيص"):
-                    st.write("نسخة البرنامج: V2.1")
-                    st.write(f"طول كلمة المرور المدخلة: {len(password_clean)}")
-                    st.write(f"طول كلمة المرور في قاعدة البيانات: {len(stored_password)}")
-                    st.write(
-                        f"اسم المستخدم الموجود في قاعدة البيانات: {db_user.get('username')}"
-                    )
-                    st.write(
-                        f"الحساب نشط: {db_user.get('is_active')}"
-                    )
-                return
-
-            st.session_state.user = db_user
-            st.success("تم تسجيل الدخول بنجاح.")
-            st.rerun()
-
-        except Exception as e:
-            st.error(f"حدث خطأ في قاعدة البيانات: {e}")
+    except Exception as e:
+        st.error(f"❌ حدث خطأ أثناء تسجيل الدخول: {e}")
+        with st.expander("🔧 تفاصيل الخطأ"):
+            st.exception(e)
 
 if "user" not in st.session_state:
     login()
