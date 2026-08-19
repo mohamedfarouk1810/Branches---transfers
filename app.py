@@ -92,7 +92,7 @@ def login():
             .execute()
         )
         
-st.write("🔧 DEBUG:", response.data)
+        st.write("🔧 DEBUG:", response.data)
         users = response.data or []
 
         if not users:
