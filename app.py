@@ -85,9 +85,10 @@ def login():
     try:
         # ابحث باسم المستخدم فقط أولاً، حتى نعرف هل Streamlit يرى الحساب أصلًا.
         response = (
-            supabase.table("app_users")
+            supabase
+            .table("app_users")
             .select("id, username, password, full_name, branch, role, is_active")
-            .eq("username", username_clean)
+            .ilike("username", username_clean)
             .limit(1)
             .execute()
         )
