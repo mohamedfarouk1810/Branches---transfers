@@ -245,3 +245,4 @@ with st.expander("🔧 تشخيص الاتصال"):
     st.write("المستخدم:", st.session_state.username)
     st.write("الصلاحية:", st.session_state.role)
     st.write("الفرع:", st.session_state.current_branch)
+
